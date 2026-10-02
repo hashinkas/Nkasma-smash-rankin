@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Nkasma Smash Ranking</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;background:#f4f5f7;color:#17181a}
+header{background:#17181a;color:#fff;padding:17px 16px;position:sticky;top:0;z-index:10}header h1{margin:0;font-size:20px}header p{margin:4px 0 0;color:#aaa;font-size:12px}
+main{max-width:760px;margin:auto;padding:10px 12px 40px}.tabs{display:flex;gap:6px;overflow:auto;padding:2px 0 8px;background:#f4f5f7}.tab{border:0;background:#ddd;padding:10px 13px;border-radius:999px;font-weight:800;white-space:nowrap}.tab.active{background:#17181a;color:#fff}
+.card{background:#fff;border-radius:14px;padding:14px;margin:10px 0;box-shadow:0 1px 6px #00000010}.card h2{font-size:18px;margin:0 0 8px}
+.rank{display:flex;align-items:center;gap:11px;padding:12px 0;border-bottom:1px solid #eee}.rank:last-child{border:0}.num{width:30px;text-align:center;font-size:19px;font-weight:900}.name{font-weight:800;flex:1}.sub{font-size:12px;color:#777;margin-top:3px}.score{font-size:19px;font-weight:900}
+label{font-size:12px;color:#666;font-weight:800;display:block;margin:10px 0 5px}select,input{width:100%;padding:11px;border:1px solid #d8d8dc;border-radius:10px;background:#fff;font:inherit}button{border:0;border-radius:10px;padding:11px 14px;font:inherit;font-weight:800;background:#17181a;color:#fff}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.notice{background:#fff8dc;padding:11px;border-radius:10px;font-size:13px}.muted{color:#777;font-size:12px}.pill{display:inline-block;background:#eee;border-radius:999px;padding:3px 8px;font-size:11px;margin-left:4px}.hidden{display:none}.small{font-size:11px;color:#777}.err{color:#b3261e}.ok{color:#137333}
+</style>
+</head>
+<body>
+<header><h1>🏆 Nkasma Smash Ranking</h1><p id="status">Supabaseに接続中…</p></header>
+<main>
+<div class="tabs">
+<button class="tab active" onclick="showTab('overall',this)">👑 総合</button>
+<button class="tab" onclick="showTab('tournament',this)">🏆 大会</button>
+<button class="tab" onclick="showTab('rating',this)">⚔️ レート</button>
+<button class="tab" onclick="showTab('input',this)">✍️ 入力</button>
+<button class="tab" onclick="showTab('history',this)">📜 履歴</button>
+</div>
+
+<section id="overall"><div class="card"><h2>👑 総合ランキング</h2><p class="muted">大会50% + レート50%。結果を入力すると自動更新。</p><div id="overallList">読み込み中…</div></div></section>
+<section id="tournament" class="hidden"><div class="card"><h2>🏆 大会ランキング</h2><p class="muted">大会ポイント累計。1位100pt〜最下位10pt。</p><div id="tourList">読み込み中…</div></div></section>
+<section id="rating" class="hidden"><div class="card"><h2>⚔️ レートランキング</h2><p class="muted">BO1 / BO3 / BO5で勝敗の重みが変わります。</p><div id="ratingList">読み込み中…</div></div></section>
+
+<section id="input" class="hidden">
+<div class="card"><h2>⚔️ 直接対決を入力</h2>
+<div class="notice">BO1 / BO3 / BO5対応。長いBOほどレート変動が大きく、BO3/5はスコア差も少し反映します。</div>
+<label>対戦形式</label><select id="bo" onchange="updateScoreHint()"><option value="1">BO1</option><option value="3">BO3</option><option value="5">BO5</option></select>
+<div class="grid"><div><label>勝者</label><select id="winner"></select></div><div><label>敗者</label><select id="loser"></select></div></div>
+<label>スコア</label><input id="score" placeholder="BO1は入力不要">
+<div class="actions"><button onclick="addMatch()">対戦結果を保存</button></div>
+<p id="matchMsg" class="small"></p>
+</div>
+
+<div class="card"><h2>🏆 大会結果を入力</h2>
+<label>大会名</label><input id="tname" placeholder="例：シカスマ#3">
+<label>開催日</label><input id="tdate" type="date">
+<label>参加人数</label><input id="entrants" type="number" min="2" placeholder="例：14">
+<div class="actions"><button onclick="makePlacementInputs()">順位入力欄を作る</button></div>
+<div id="placements"></div>
+<p class="muted">同じ人が複数行に出る大会にも対応。</p>
+</div>
+</section>
+
+<section id="history" class="hidden"><div class="card"><h2>📜 入力履歴</h2><div id="historyList">読み込み中…</div></div></section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL="https://wsuwoobpdgbkeruhwotz.supabase.co";
+const SUPABASE_KEY="sb_publishable_ja6QVbsyFNjvAfV1uwy9tQ_l7DCQMri";
+const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+const initialRatings={
+"ハシンカス":1517,"ぺきゆーず":1622,"エビアイス":1608,"もりりん":1538,
+"はどうのゆうしゃ":1380,"えっぎぃ":1338,"よりもち":1489
+};
+let players=[],matches=[],tournaments=[],results=[];
+
+function points(n,p){
+ const nn=Number(n),pp=Number(p);
+ if(!Number.isFinite(nn)||nn<2||!Number.isFinite(pp))return 0;
+ return Math.round(10+90*(nn-pp)/(nn-1));
+}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function showTab(id,el){document.querySelectorAll("main>section").forEach(x=>x.classList.add("hidden"));document.getElementById(id).classList.remove("hidden");document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));el.classList.add("active")}
+function fillPlayers(){
+ const o=players.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("");
+ document.getElementById("winner").innerHTML=o;
+ document.getElementById("loser").innerHTML=o;
+}
+function scoreData(bo,s){
+ if(bo===1)return {w:1,l:0};
+ const m=String(s||"").trim().match(/^(\d+)\s*[-:]\s*(\d+)$/);
+ if(!m)return null;
+ const w=+m[1],l=+m[2],need=Math.ceil(bo/2);
+ if(w!==need||l<0||l>=need)return null;
+ return {w,l};
+}
+function calcRatings(){
+ const r=Object.fromEntries(players.map(p=>[p.id,Number(initialRatings[p.name]??1500)]));
+ for(const m of [...matches].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))){
+  const wid=m.winner_id,lid=m.loser_id;
+  const a=Number(r[wid]??1500),b=Number(r[lid]??1500);
+  const expected=1/(1+10**((b-a)/400));
+  const boN=Number(m.bo);
+  const base=boN===1?24:boN===3?36:boN===5?48:24;
+  const wg=Number(m.winner_games??1),lg=Number(m.loser_games??0);
+  const total=wg+lg,diff=Math.abs(wg-lg);
+  const margin=total>1?1+Math.min(.25,diff*.08):1;
+  const change=base*margin*(1-expected);
+  r[wid]=a+change;r[lid]=b-change;
+ }
+ return r;
+}
+function calcTours(){
+ const t=Object.fromEntries(players.map(p=>[p.id,0]));
+ for(const x of results){
+  const tr=tournaments.find(z=>String(z.id)===String(x.tournament_id));
+  if(tr){
+   const pid=x.player_id;
+   t[pid]=Number(t[pid]??0)+points(tr.entrants,x.placement);
+  }
+ }
+ return t;
+}
+function render(){
+ const r=calcRatings(),t=calcTours();
+ const tv=players.map(p=>Number(t[p.id]??0));
+ const rv=players.map(p=>Number(r[p.id]??1500));
+ const tmin=Math.min(...tv),tmax=Math.max(...tv),rmin=Math.min(...rv),rmax=Math.max(...rv);
+
+ const overall=players.map(p=>{
+   const tvv=Number(t[p.id]??0),rvv=Number(r[p.id]??1500);
+   const v=(tmax===tmin?50:(tvv-tmin)/(tmax-tmin)*100)*.5+
+           (rmax===rmin?50:(rvv-rmin)/(rmax-rmin)*100)*.5;
+   return {p,v:Number.isFinite(v)?v:0};
+ }).sort((a,b)=>b.v-a.v);
+
+ const tour=players.map(p=>({p,v:Number(t[p.id]??0)})).sort((a,b)=>b.v-a.v);
+ const rate=players.map(p=>({p,v:Number(r[p.id]??1500)})).sort((a,b)=>b.v-a.v);
+
+ const draw=(a,type,fmt)=>a.map((x,i)=>`<div class="rank"><div class="num">${i+1}</div><div class="name">${esc(x.p.name)}<div class="sub">${type==="t"?x.v+" pt":type==="r"?Math.round(x.v)+" rating":"総合スコア"}</div></div><div class="score">${fmt(Number(x.v)||0)}</div></div>`).join("");
+
+ document.getElementById("overallList").innerHTML=draw(overall,"o",x=>x.toFixed(1));
+ document.getElementById("tourList").innerHTML=draw(tour,"t",x=>String(Math.round(x)));
+ document.getElementById("ratingList").innerHTML=draw(rate,"r",x=>String(Math.round(x)));
+
+ let h=[];
+ for(const m of [...matches].reverse()){
+  const w=players.find(p=>String(p.id)===String(m.winner_id))?.name||"",l=players.find(p=>String(p.id)===String(m.loser_id))?.name||"";
+  h.push(`<div class="rank"><div class="name">⚔️ ${esc(w)} vs ${esc(l)} <span class="pill">BO${Number(m.bo)||1}</span><div class="sub">${m.winner_games!=null?m.winner_games+"-"+m.loser_games:""}</div></div></div>`);
+ }
+ for(const tr of [...tournaments].reverse())h.push(`<div class="rank"><div class="name">🏆 ${esc(tr.name)}<div class="sub">${tr.entrants??""}人 / ${tr.event_date||""}</div></div></div>`);
+ document.getElementById("historyList").innerHTML=h.join("")||'<p class="muted">まだありません</p>';
+}
+async function loadAll(){
+ const qs=await Promise.all([
+  sb.from("players").select("*").order("name"),
+  sb.from("matches").select("*").order("created_at"),
+  sb.from("tournaments").select("*").order("event_date",{ascending:false}),
+  sb.from("tournament_results").select("*").order("placement")
+ ]);
+ for(const q of qs)if(q.error)throw q.error;
+ players=qs[0].data||[];matches=qs[1].data||[];tournaments=qs[2].data||[];results=qs[3].data||[];
+ fillPlayers();render();document.getElementById("status").textContent="🟢 Supabase接続・同期ON";
+}
+async function addMatch(){
+ const b=Number(document.getElementById("bo").value),w=document.getElementById("winner").value,l=document.getElementById("loser").value;
+ if(w===l){document.getElementById("matchMsg").textContent="同じ人は選べません";return}
+ const sc=scoreData(b,document.getElementById("score").value);
+ if(!sc){document.getElementById("matchMsg").textContent=b===1?"BO1はスコア不要":"正しいスコアを入力してね";return}
+ const {error}=await sb.from("matches").insert({winner_id:w,loser_id:l,bo:b,winner_games:sc.w,loser_games:sc.l});
+ if(error){document.getElementById("matchMsg").textContent="保存エラー："+error.message;return}
+ document.getElementById("score").value="";document.getElementById("matchMsg").textContent="保存しました！";await loadAll();
+}
+function updatePlacementPoints(){
+ const n=Number(document.getElementById("entrants").value);
+ document.querySelectorAll(".placement-row").forEach(row=>{
+  const pos=Number(row.querySelector(".placement").value);
+  row.querySelector(".placement-label").textContent=pos+"位";
+  row.querySelector(".placement-points").value=points(n,pos);
+ });
+}
+function makePlacementInputs(){
+ const n=Number(document.getElementById("entrants").value);
+ if(n<2){alert("参加人数を2人以上で入力");return}
+ const playerOptions=players.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("");
+ const placementOptions=Array.from({length:n},(_,i)=>`<option value="${i+1}" ${i+1===1?"selected":""}>${i+1}位</option>`).join("");
+ document.getElementById("placements").innerHTML=Array.from({length:n},(_,i)=>`<div class="placement-row"><div class="grid"><div><label class="placement-label">${i+1}位</label><select class="place">${playerOptions}</select></div><div><label>順位</label><select class="placement" onchange="updatePlacementPoints()">${placementOptions}</select></div></div><label>大会ポイント</label><input class="placement-points" value="${points(n,i+1)}" disabled></div>`).join("")+`<div class="notice">同順位を自由に設定できます。例：5位・5位・7位。</div><div class="actions"><button onclick="addTournament()">大会を保存</button></div>`;
+}
+async function addTournament(){
+ const n=Number(document.getElementById("entrants").value),name=document.getElementById("tname").value.trim()||"大会",date=document.getElementById("tdate").value||new Date().toISOString().slice(0,10);
+ const rows=[...document.querySelectorAll(".place")].map((e,i)=>({player_id:e.value,placement:i+1}));
+ const tr=await sb.from("tournaments").insert({name,event_date:date,entrants:n}).select().single();
+ if(tr.error){alert(tr.error.message);return}
+ const rr=await sb.from("tournament_results").insert(rows.map(x=>({...x,tournament_id:tr.data.id})));
+ if(rr.error){alert(rr.error.message);return}
+ document.getElementById("tname").value="";document.getElementById("entrants").value="";document.getElementById("placements").innerHTML="";await loadAll();alert("大会結果を保存しました！");
+}
+function updateScoreHint(){
+ const b=Number(document.getElementById("bo").value);
+ document.getElementById("score").placeholder=b===1?"BO1は入力不要":b===3?"例：2-1":"例：3-1";
+}
+async function subscribe(){
+ sb.channel("ranking-live")
+ .on("postgres_changes",{event:"*",schema:"public",table:"matches"},loadAll)
+ .on("postgres_changes",{event:"*",schema:"public",table:"tournaments"},loadAll)
+ .on("postgres_changes",{event:"*",schema:"public",table:"tournament_results"},loadAll)
+ .subscribe();
+}
+(async()=>{
+ try{await loadAll();await subscribe();updateScoreHint()}
+ catch(e){console.error(e);document.getElementById("status").textContent="🔴 接続エラー："+(e?.message||String(e))}
+})();
+</script>
+</body>
+</html>
