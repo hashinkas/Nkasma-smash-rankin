@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>身内スマブラランキング</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;background:#f5f6f8;color:#17181a}
+header{background:#17181a;color:#fff;padding:18px 16px;position:sticky;top:0;z-index:5}header h1{margin:0;font-size:20px}header p{margin:4px 0 0;color:#bbb;font-size:12px}
+main{max-width:760px;margin:auto;padding:12px}.tabs{display:flex;gap:6px;overflow:auto;margin-bottom:10px}.tab{border:0;background:#ddd;padding:10px 13px;border-radius:999px;font-weight:700;white-space:nowrap}.tab.active{background:#17181a;color:#fff}
+.card{background:#fff;border-radius:14px;padding:14px;margin:10px 0;box-shadow:0 1px 5px #00000010}.rank{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #eee}.rank:last-child{border:0}.num{width:30px;text-align:center;font-size:20px;font-weight:800}.name{font-weight:800;flex:1}.sub{font-size:12px;color:#777;margin-top:3px}.score{font-size:20px;font-weight:900}
+button,input,select{font:inherit}button{border:0;border-radius:10px;padding:11px 14px;font-weight:800;background:#17181a;color:#fff}.secondary{background:#e8e8ea;color:#17181a}.danger{background:#c93434}
+label{font-size:12px;color:#666;font-weight:700;display:block;margin:10px 0 5px}select,input{width:100%;padding:11px;border:1px solid #ddd;border-radius:10px;background:#fff}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.hidden{display:none}.notice{background:#fff8dc;padding:11px;border-radius:10px;font-size:13px}.muted{color:#777;font-size:12px}.pill{display:inline-block;background:#eee;border-radius:999px;padding:3px 8px;font-size:11px}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:8px 5px;border-bottom:1px solid #eee;text-align:left}th{color:#777}
+</style>
+</head>
+<body>
+<header><h1>🏆 身内スマブラランキング</h1><p>大会・レート・総合をリアルタイム集計するための土台</p></header>
+<main>
+<div class="tabs">
+<button class="tab active" onclick="showTab('overall',this)">👑 総合</button>
+<button class="tab" onclick="showTab('tournament',this)">🏆 大会</button>
+<button class="tab" onclick="showTab('rating',this)">⚔️ レート</button>
+<button class="tab" onclick="showTab('input',this)">✍️ 結果入力</button>
+<button class="tab" onclick="showTab('history',this)">📜 履歴</button>
+</div>
+
+<section id="overall"><div class="card"><h2>👑 総合ランキング</h2><p class="muted">大会50% + レート50%（初期設定）。数値はDB接続後に自動更新。</p><div id="overallList"></div></div></section>
+<section id="tournament" class="hidden"><div class="card"><h2>🏆 大会ランキング</h2><div id="tourList"></div></div></section>
+<section id="rating" class="hidden"><div class="card"><h2>⚔️ レートランキング</h2><div id="ratingList"></div></div></section>
+
+<section id="input" class="hidden">
+<div class="card"><h2>⚔️ 直接対決を入力</h2>
+<div class="notice">BO1 / BO3 / BO5に対応。長いBOほど勝敗のレート変動を大きくする設定です。</div>
+<label>対戦形式</label><select id="bo"><option value="1">BO1</option><option value="3">BO3</option><option value="5">BO5</option></select>
+<div class="grid"><div><label>勝者</label><select id="winner"></select></div><div><label>敗者</label><select id="loser"></select></div></div>
+<label>スコア（任意）</label><input id="score" placeholder="例：3-1（BO5）">
+<div class="actions"><button onclick="addMatch()">対戦結果を追加</button></div>
+<p class="muted">※本番版ではSupabaseに保存し、全員のスマホへ即時反映します。</p>
+</div>
+
+<div class="card"><h2>🏆 大会結果を入力</h2>
+<label>大会名</label><input id="tname" placeholder="例：シカスマ#3">
+<label>参加人数</label><input id="entrants" type="number" min="2" placeholder="例：14">
+<p class="muted">参加人数Nに応じて、1位100点〜最下位10点を自動計算。</p>
+<div id="placements"></div>
+<div class="actions"><button onclick="makePlacementInputs()">順位入力欄を作る</button></div>
+</div>
+</section>
+
+<section id="history" class="hidden"><div class="card"><h2>📜 入力履歴</h2><div id="historyList" class="muted">まだありません</div></div></section>
+</main>
+<script>
+const players=["ハシンカス","ぺきゆーず","エビアイス","もりりん","はどうのゆうしゃ","えっぎぃ","よりもち"];
+let state=JSON.parse(localStorage.getItem("shinuchi_demo")||'{"matches":[],"tournaments":[]}');
+const initial={ハシンカス:1517,ぺきゆーず:1622,エビアイス:1608,もりりん:1538,はどうのゆうしゃ:1380,えっぎぃ:1338,よりもち:1489};
+function points(n,p){return Math.round(10+90*(n-p)/(n-1))}
+function ratings(){let r={...initial}; for(const m of state.matches){const a=r[m.w],b=r[m.l],e=1/(1+10**((b-a)/400));const k=m.bo===1?24:m.bo===3?36:48; r[m.w]+=k*(1-e);r[m.l]-=k*(1-e)}return r}
+function tourTotals(){let t=Object.fromEntries(players.map(x=>[x,0])); for(const x of state.tournaments){for(const row of x.rows)t[row.player]=(t[row.player]||0)+points(x.n,row.place)}return t}
+function render(){
+const r=ratings(),t=tourTotals(),ts=Object.values(t),rs=Object.values(r), tmin=Math.min(...ts),tmax=Math.max(...ts),rmin=Math.min(...rs),rmax=Math.max(...rs);
+const overall=players.map(p=>({p,v:(tmax===tmin?50:(t[p]-tmin)/(tmax-tmin)*100)*.5+(rmax===rmin?50:(r[p]-rmin)/(rmax-rmin)*100)*.5})).sort((a,b)=>b.v-a.v);
+const draw=(arr,key,fmt)=>arr.map((x,i)=>`<div class="rank"><div class="num">${i+1}</div><div class="name">${x.p}<div class="sub">${key==='t'?t[x.p]+' pt':key==='r'?Math.round(r[x.p])+' rating':''}</div></div><div class="score">${fmt(x.v)}</div></div>`).join('');
+document.querySelector("#overallList").innerHTML=draw(overall,'o',x=>x.v.toFixed(1));
+document.querySelector("#tourList").innerHTML=draw(players.map(p=>({p,v:t[p]})).sort((a,b)=>b.v-a.v),'t',x=>x.v);
+document.querySelector("#ratingList").innerHTML=draw(players.map(p=>({p,v:r[p]})).sort((a,b)=>b.v-a.v),'r',x=>Math.round(x.v));
+document.querySelector("#historyList").innerHTML=[...state.matches.map(m=>`⚔️ ${m.w} vs ${m.l} <span class="pill">BO${m.bo}</span> ${m.score||''}`),...state.tournaments.map(x=>`🏆 ${x.name}（${x.n}人）`)].reverse().join("<br>")||"まだありません";
+}
+function fill(){winner.innerHTML=loser.innerHTML=players.map(p=>`<option>${p}</option>`).join("")}
+function addMatch(){const w=winner.value,l=loser.value;if(w===l)return alert("同じ人は選べません");state.matches.push({w,l,bo:+bo.value,score:score.value,date:new Date().toISOString()});localStorage.setItem("shinuchi_demo",JSON.stringify(state));score.value="";render();alert("追加した！")}
+function makePlacementInputs(){const n=+entrants.value;if(n<2)return;placements.innerHTML=Array.from({length:n},(_,i)=>`<div class="grid"><div><label>${i+1}位</label><select class="place">${players.map(p=>`<option>${p}</option>`).join("")}</select></div><div><label>点数</label><input value="${points(n,i+1)}" disabled></div></div>`).join("")+`<button onclick="addTournament()">大会を保存</button>`}
+function addTournament(){const n=+entrants.value;const rows=[...document.querySelectorAll(".place")].map((e,i)=>({place:i+1,player:e.value}));state.tournaments.push({name:tname.value||"大会",n,rows,date:new Date().toISOString()});localStorage.setItem("shinuchi_demo",JSON.stringify(state));tname.value="";render();alert("大会結果を追加した！")}
+function showTab(id,el){document.querySelectorAll("main>section").forEach(x=>x.classList.add("hidden"));document.getElementById(id).classList.remove("hidden");document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));el.classList.add("active")}
+fill();render();
+</script>
+</body></html>
